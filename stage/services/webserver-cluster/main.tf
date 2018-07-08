@@ -2,31 +2,20 @@ provider "aws" {
   region = "us-west-2"
 }
 
-resource "aws_launch_template" "ssb_example" {
-  image_id      = "ami-db710fa3" #Ubuntu 16.04 
-  instance_type = "t2.micro"
-  name          = "ssb_example"
+resource "aws_launch_configuration" "ssb_example" {
+  image_id        = "ami-db710fa3"                        #Ubuntu 16.04 
+  instance_type   = "t2.micro"
+  security_groups = ["${aws_security_group.instance.id}"]
 
-  #security_groups = ["${aws_security_group.instance.id}"]
-  security_group_names = ["${aws_security_group.instance.name}"]
+  #user_data = "${base64encode(data.template_file.user_data.rendered)}"
+  key_name  = "ssb-jernster"
+  user_data = "${data.template_file.user_data.rendered}"
 
-  #vpc_security_group_ids = ["${aws_security_group.instance.id}"]
-  user_data = "${base64encode(data.template_file.user_data.rendered)}"
-
-  #name_prefix     = "test-tf-example-"
-
-
-  #key_name = "jernster.pem"
-
-  # template_file deprecated but data.template_file doesn't work either...
-  #user_data = "${template_file.user_data.rendered}"
   lifecycle {
     create_before_destroy = true
   }
 }
 
-# Warning: template_file.user_data: using template_file as a resource is deprecated; consider using the data source instead
-#resource "template_file" "user_data" {
 data "template_file" "user_data" {
   template = "${file("user-data.sh")}"
 
@@ -48,18 +37,9 @@ resource "aws_security_group" "instance" {
   }
 }
 
-#variable "server_port" {
-#  description = "The port the server will use for HTTP requests"
-#  default     = 8080
-#}
-
-#output "elb_dns_name" {
-#  value = "${aws_elb.elb_example.dns_name}"
-#}
-
 resource "aws_autoscaling_group" "asg_example" {
-  name                 = "terraform-asg-example"
-  launch_configuration = "${aws_launch_template.ssb_example.name}"
+  #name                 = "terraform-asg-example"
+  launch_configuration = "${aws_launch_configuration.ssb_example.id}"
   availability_zones   = ["${data.aws_availability_zones.all.names}"]
 
   load_balancers    = ["${aws_elb.elb_example.name}"]
@@ -78,7 +58,7 @@ resource "aws_autoscaling_group" "asg_example" {
 data "aws_availability_zones" "all" {}
 
 resource "aws_elb" "elb_example" {
-  name               = "terraform-asg-example"
+  #name               = "terraform-asg-example"
   availability_zones = ["${data.aws_availability_zones.all.names}"]
   security_groups    = ["${aws_security_group.elb.id}"]
 
@@ -99,7 +79,7 @@ resource "aws_elb" "elb_example" {
 }
 
 resource "aws_security_group" "elb" {
-  name = "terraform-example-elb"
+  #name = "terraform-example-elb"
 
   ingress {
     from_port   = 80
@@ -122,6 +102,27 @@ data "terraform_remote_state" "db" {
   config {
     bucket = "ssb-terraform-state"
     key    = "stage/data-stores/mysql/terraform.tfstate"
+    region = "us-west-2"
+  }
+}
+
+terraform {
+  backend "s3" {
+    bucket  = "ssb-terraform-state"
+    key     = "stage/services/webserver-cluster/terraform.tfstate"
+    region  = "us-west-2"
+    encrypt = "true"
+
+    #dynamodb_table = "terraform-lock-table"
+  }
+}
+
+data "terraform_remote_state" "webserver-cluster" {
+  backend = "s3"
+
+  config {
+    bucket = "ssb-terraform-state"
+    key    = "stage/services/webserver-cluster/terraform.tfstate"
     region = "us-west-2"
   }
 }

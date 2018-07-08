@@ -14,16 +14,6 @@ resource "aws_db_instance" "ssb-rds-example" {
   skip_final_snapshot = true
 }
 
-#data "terraform_remote_state" "db" {
-#  backend = "s3"
-
-#  config {
-#    bucket  = "ssb-terraform-state"
-#    key     = "stage/data-stores/mysql/terraform.tfstate"
-#    region  = "us-west-2"
-##  }
-#}
-
 terraform {
   backend "s3" {
     bucket  = "ssb-terraform-state"
