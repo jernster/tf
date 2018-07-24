@@ -1,15 +1,9 @@
-provider "aws" {
-  region = "us-west-2"
-}
-
 resource "aws_launch_configuration" "ssb_example" {
-  image_id        = "ami-db710fa3"                        #Ubuntu 16.04 
+  image_id        = "ami-db710fa3"                             #Ubuntu 16.04 
   instance_type   = "t2.micro"
   security_groups = ["${aws_security_group.instance.id}"]
-
-  #user_data = "${base64encode(data.template_file.user_data.rendered)}"
-  key_name  = "ssb-jernster"
-  user_data = "${data.template_file.user_data.rendered}"
+  key_name        = "ssb-jernster"
+  user_data       = "${data.template_file.user_data.rendered}"
 
   lifecycle {
     create_before_destroy = true
@@ -21,13 +15,24 @@ data "template_file" "user_data" {
 
   vars {
     server_port = "${var.server_port}"
-    db_address  = "${data.terraform_remote_state.db.address}"
     db_port     = "${data.terraform_remote_state.db.port}"
+    db_address  = "${data.terraform_remote_state.db.address}"
+  }
+}
+
+data "terraform_remote_state" "db" {
+  backend = "s3"
+
+  config {
+    bucket = "${var.db_remote_state_bucket}"
+    key    = "${var.db_remote_state_key}"
+    region = "us-west-2"
   }
 }
 
 resource "aws_security_group" "instance" {
-  name = "ssb-example-instance"
+  #name = "ssb-example-instance"
+  name = "${var.cluster_name}-instance"
 
   ingress {
     from_port   = "${var.server_port}"
@@ -50,7 +55,7 @@ resource "aws_autoscaling_group" "asg_example" {
 
   tags {
     key                 = "Name"
-    value               = "terraform-asg-example"
+    value               = "${var.cluster_name}-instance"
     propagate_at_launch = true
   }
 }
@@ -58,7 +63,7 @@ resource "aws_autoscaling_group" "asg_example" {
 data "aws_availability_zones" "all" {}
 
 resource "aws_elb" "elb_example" {
-  #name               = "terraform-asg-example"
+  name               = "${var.cluster_name}-elb"
   availability_zones = ["${data.aws_availability_zones.all.names}"]
   security_groups    = ["${aws_security_group.elb.id}"]
 
@@ -78,51 +83,45 @@ resource "aws_elb" "elb_example" {
   }
 }
 
+// inline
+#resource "aws_security_group" "elb" {
+#  name = "${var.cluster_name}-elb"
+#  
+#
+#  ingress {
+#    from_port   = 80
+#    to_port     = 80
+#   protocol    = "tcp"
+#    cidr_blocks = ["0.0.0.0/0"]
+#  }
+#
+#  egress {
+#    from_port   = 0
+#   to_port     = 0
+#    cidr_blocks = ["0.0.0.0/0"]
+#  }
+#}
+
 resource "aws_security_group" "elb" {
-  #name = "terraform-example-elb"
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  name = "${var.cluster_name}-elb"
 }
 
-data "terraform_remote_state" "db" {
-  backend = "s3"
+resource "aws_security_group_rule" "allow_http_inbound" {
+  type              = "ingress"
+  security_group_id = "${aws_security_group.elb.id}"
 
-  config {
-    bucket = "ssb-terraform-state"
-    key    = "stage/data-stores/mysql/terraform.tfstate"
-    region = "us-west-2"
-  }
+  from_port   = 80
+  to_port     = 80
+  protocol    = "tcp"
+  cidr_blocks = ["0.0.0.0/0"]
 }
 
-terraform {
-  backend "s3" {
-    bucket  = "ssb-terraform-state"
-    key     = "stage/services/webserver-cluster/terraform.tfstate"
-    region  = "us-west-2"
-    encrypt = "true"
+resource "aws_security_group_rule" "allow_all_outbound" {
+  type              = "egress"
+  security_group_id = "${aws_security_group.elb.id}"
 
-    #dynamodb_table = "terraform-lock-table"
-  }
-}
-
-data "terraform_remote_state" "webserver-cluster" {
-  backend = "s3"
-
-  config {
-    bucket = "ssb-terraform-state"
-    key    = "stage/services/webserver-cluster/terraform.tfstate"
-    region = "us-west-2"
-  }
+  from_port   = 0
+  to_port     = 0
+  protocol    = "-1"
+  cidr_blocks = ["0.0.0.0/0"]
 }
